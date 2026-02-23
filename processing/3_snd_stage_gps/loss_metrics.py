@@ -72,19 +72,24 @@ def huber_correlation_loss(pred, target, weights=None, delta=0.1, alpha=0.5):
     
     return huber.mean() + alpha * (1-corr)
 
-@register_loss("autofocus_direction") # Loss used e.g. in GEARS, 2023
-def autofocus_direction_loss(pred, target, weights=None, gamma=2, lambda_dir=1.0):
-    per_gene_sq_err = (pred-target) ** 2
-    autofocus = (per_gene_sq_err ** gamma).mean()
+@register_loss("autofocus_direction") # Proposed in GEARS, 2024
+def autofocus_direction_loss(pred, target, weights=None, gamma=2, lambda_dir=1e-3, deg_threshold=0.1):
+    deg_mask = target.abs() > deg_threshold
 
-    pred_sign = torch.sign(pred)
-    target_sign = torch.sign(target)
-    dir_loss = ((pred_sign - target_sign) ** 2).mean()
+    if deg_mask.sum() == 0:
+        deg_mask = torch.ones_like(target, dtype=torch.bool)
+
+    per_gene_sq_err = (pred - target) ** 2
 
     if weights is not None:
-        weights_af = ((per_gene_sq_err * weights) ** gamma).mean()
-        return weights_af + lambda_dir * dir_loss
-    
+        autofocus = ((per_gene_sq_err * weights)[deg_mask] ** gamma).mean()
+    else:
+        autofocus = (per_gene_sq_err[deg_mask] ** gamma).mean()
+
+    pred_sign = torch.sign(pred[deg_mask])
+    target_sign = torch.sign(target[deg_mask])
+    dir_loss = ((pred_sign - target_sign) ** 2).mean()
+
     return autofocus + lambda_dir * dir_loss
 
 @register_loss("deg_weighted_mse") # Loss proposed in "Diversity by Design", 2025

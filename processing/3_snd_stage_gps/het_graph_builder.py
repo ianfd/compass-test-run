@@ -187,6 +187,34 @@ class OmniPathGRNBuilder:
         print(f"    Confidence distribution: {conf_dist}")
 
         return self
+    
+    def debug_load_local_go(self):
+
+        df = pd.read_csv("/local/26-01_compass-proj/data/norman/go.csv")
+
+        if "go" not in self.edges:
+            self.edges["go"] = []
+        
+        for _, row in df.iterrows():
+            source = row['source']
+            target = row['target']
+            conf = row['importance']
+
+            self.edges["go"].append(
+                {
+                    "source": self.gene_to_idx[source],
+                    "target": self.gene_to_idx[target],
+                    "source_name": source,
+                    "target_name": target,
+                    "confidence": conf,
+                    "directed": False,
+                    "sign": 0.0,
+                }
+            )
+
+        print(f"  Added {len(self.edges['go'])}")
+    
+        return self
 
 
     def remove_duplicates(self):
@@ -254,11 +282,11 @@ class OmniPathGRNBuilder:
             pct = 100 * count / edge_index.shape[1]
             print(f"   {name:20s}: {count:6d} ({pct:1f}%)")
 
-        signs = torch.tensor([attr[len(type_mapping)+1] for attr in edge_attr])
+        signs = torch.tensor([attr[len(type_mapping)] for attr in edge_attr])
         print(f"\nSign distribution:")
         print(f"  Activation (+1):   {(signs == 1.0).sum().item()}")
         print(f"  Repression (-1):   {(signs == -1.0).sum().item()}")
-        print(f"  Unknown/PPI (0):   {(signs == 0.0).sum().item()}")
+        print(f"  Unknown/PPI/GO (0):   {(signs == 0.0).sum().item()}")
 
         return edge_index, edge_type, edge_attr
 

@@ -181,10 +181,11 @@ class OmniPathGuidedGPSLayer(nn.Module):
         self.norm_ffn = nn.BatchNorm1d(hidden_dim)
 
         self.ffn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 2),
+            nn.Linear(hidden_dim*2, hidden_dim * 4),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * 4, hidden_dim),
+            nn.BatchNorm1d(hidden_dim)
         )
 
         self.dropout = nn.Dropout(dropout)
@@ -215,15 +216,12 @@ class OmniPathGuidedGPSLayer(nn.Module):
             x_mpnn = torch.zeros_like(x)
 
         x_mpnn = self.dropout(x_mpnn)
-        x = self.norm_mpnn(x + x_mpnn)
 
         x_attn = self.attention(x, bias_matrix)
         x_attn = self.dropout(x_attn)
-        x = self.norm_attn(x + x_attn)
 
-        x_ffn = self.ffn(x)
-        x_ffn = self.dropout(x_ffn)
-        x = self.norm_ffn(x + x_ffn)
+        x_ffn = self.ffn(torch.cat([x_mpnn, x_attn], dim=1))
+        x = x + x_ffn
 
         return x
 
@@ -386,7 +384,7 @@ class PredictionHead(nn.Module):
     def __init__(self, hidden_dim, dropout=0.1):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_dim * 3, hidden_dim),
+            nn.Linear(hidden_dim * 3 + 1, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -395,10 +393,10 @@ class PredictionHead(nn.Module):
             nn.Linear(hidden_dim // 2, 1),
         )
 
-    def forward(self, Z, H, h_pert):
+    def forward(self, Z, H, h_pert, raw_expr):
         h_pert_broadcast = h_pert.unsqueeze(0).expand(H.size(0), -1)
-
-        combined = torch.cat([Z, H, h_pert_broadcast], dim=-1)
+        raw_expr = raw_expr.unsqueeze(-1)
+        combined = torch.cat([Z, H, h_pert_broadcast, raw_expr], dim=-1)
 
         return self.mlp(combined).squeeze(-1)
 
@@ -456,12 +454,15 @@ class COMPASSModelV2(nn.Module):
         pe=None,
         bias_matrix=None,
     ):
+        raw_expr = x[:, 0]
+        
         H = self.encoder(
             x, edge_index, edge_attr, edge_type, dist_matrix, edge_type_matrix, pe
         )
         h_pert = self.pert_extractor(H, pert_index)
         Z = self.decoder(H, h_pert, pert_index, bias_matrix)
-        delta = self.prediction_head(Z, H, h_pert)
+
+        delta = self.prediction_head(Z, H, h_pert, raw_expr)
         return delta
 
 
@@ -676,6 +677,7 @@ def train_compass_model(
 
     best_val_loss = float("inf")
     patience_counter = 0
+    min_epochs = 100  # Don't allow early stopping before this many epochs
 
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch + 1}/{num_epochs}")
@@ -714,7 +716,8 @@ def train_compass_model(
             print("best model saved!!!!....maybe")
         else:
             patience_counter += 1
-            if patience_counter >= patience:
+            # Only check early stopping after minimum epochs
+            if patience_counter >= patience and epoch >= min_epochs:
                 print(f"\nEarly stopping at epoch {epoch + 1}")
                 break
 
