@@ -465,17 +465,17 @@ def main_train_run_omni_search():
 
     param_grid = {
         "hidden_dim": [256],
-        "encoder_layers": [6],
-        "decoder_layers": [3],
+        "encoder_layers": [3],
+        "decoder_layers": [4],
         "num_heads": [16],
         "dropout": [0.1],
-        "lr": [0.001,0.0005],
-        "k_max": [3,5],
+        "lr": [0.001],
+        "k_max": [3],
         "decoder_use_bias": [False],
-        "loss_fn_name": ['autofocus_direction', 'mse']
+        "loss_fn_name": ['autofocus_direction']
     }
 
-    num_epochs = 200
+    num_epochs = 100
     output_dir = Path("plots_compass_v2_search")
     output_dir.mkdir(exist_ok=True, parents=True)
     worker_results_dir = output_dir / "worker_results"

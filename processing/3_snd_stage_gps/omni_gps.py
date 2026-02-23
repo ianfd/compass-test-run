@@ -273,12 +273,13 @@ class OmniPathGuidedGPSEncoder(nn.Module):
             x = torch.cat([x, pe], dim=-1)
 
         h = self.node_encoder(x)
+        h_input = h.clone()
         bias = self.struct_bias(dist_matrix, edge_type_matrix)
 
         for layer in self.layers:
             h = layer(h, edge_index, edge_attr, edge_type, bias)
 
-        return h
+        return h, h_input
 
 
 class PerturbationExtractor(nn.Module):
@@ -294,14 +295,15 @@ class PerturbationExtractor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
         )
 
-    def forward(self, H, pert_index):
-        h_pert_set = H[pert_index]
+    def forward(self, h_input, pert_index):
+        h_pert_set = h_input[pert_index]
+        if h_pert_set.dim() == 1:
+            h_pert_set = h_pert_set.unsqueeze(0) 
 
         if h_pert_set.size(0) == 1:
             pooled = h_pert_set.squeeze(0)
         else:
             scores = torch.matmul(self.attn_proj(h_pert_set), self.attn_query)
-
             weights = F.softmax(scores, dim=0)
             pooled = (weights.unsqueeze(-1) * h_pert_set).sum(dim=0)
 
@@ -456,10 +458,10 @@ class COMPASSModelV2(nn.Module):
     ):
         raw_expr = x[:, 0]
         
-        H = self.encoder(
+        H, h_inputs = self.encoder(
             x, edge_index, edge_attr, edge_type, dist_matrix, edge_type_matrix, pe
         )
-        h_pert = self.pert_extractor(H, pert_index)
+        h_pert = self.pert_extractor(h_inputs, pert_index)
         Z = self.decoder(H, h_pert, pert_index, bias_matrix)
 
         delta = self.prediction_head(Z, H, h_pert, raw_expr)
